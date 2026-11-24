@@ -29,7 +29,7 @@ from enum import IntEnum
 from asyncua import Server, ua
 
 # ---------------------------------------------------------------------------
-# Konfiguration
+# Konfiguration 
 # ---------------------------------------------------------------------------
 
 NAMESPACE_URI = "urn:mock:machines"
