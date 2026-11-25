@@ -4,63 +4,50 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"time"
+	"os"
+	"os/signal"
 
-	"github.com/gopcua/opcua"
-	"github.com/gopcua/opcua/ua"
+	"github.com/fgrothaus/shopfloor-kpi/internal/model"
+	"github.com/fgrothaus/shopfloor-kpi/internal/opcua"
 )
 
-const (
-	endpoint = "opc.tcp://localhost:4840"
-	stateId  = "ns=2;s=Presse_01.State"
-)
+const endpoint = "opc.tcp://localhost:4840"
+const machine = "Presse_01"
+
+var nodes = []string{
+	"ns=2;s=Presse_01.State",
+	"ns=2;s=Presse_01.ActivePower",
+	"ns=2;s=Presse_01.AlarmCode",
+	"ns=2;s=Presse_01.EnergyTotal",
+	"ns=2;s=Presse_01.GoodParts",
+	"ns=2;s=Presse_01.ScrapParts",
+	"ns=2;s=Presse_01.OilTemperature",
+	"ns=2;s=Presse_01.OrderNumber",
+	"ns=2;s=Presse_01.PressForce",
+	"ns=2;s=Presse_01.StrokeCounter",
+	"ns=2;s=Presse_01.TargetCycleTime",
+	"ns=2;s=Presse_01.TargetQuantity",
+}
 
 func main() {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second) // 10 Sekunden Timeout für die Verbindung festlegen.
-	defer cancel()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop() // defer ist wie ein finally. Wird immer ausgeführt. Es wird am Ende ausgeführt, aber an den Anfang geschrieben,
+	// damit man sofort sieht, auf was sich das defer bezieht. Es wird in umgekehrter Reihenfolge ausgeführt, also das letzte defer wird zuerst ausgeführt (LIFO).
 
-	client, err := opcua.NewClient(endpoint, opcua.SecurityMode(ua.MessageSecurityModeNone))
+	// Channel erzeugen, der model.Measurements über den Channel transportiert
+	measurements := make(chan model.Measurement)
 
-	// nil ist ein Fehlerobjekt. Wenn err = nil heißt, kein Fehler. err != nil heißt Fehler wurde gesetzt.
-	if err != nil {
-		log.Fatalf("Client anlegen: %v", err)
+	// OPC UA läuft in einer eigenen Goroutine und liefert über den Channel
+	go func() {
+		defer close(measurements)
+		if err := opcua.Run(ctx, endpoint, machine, nodes, measurements); err != nil {
+			log.Printf("opcua: %v", err)
+		}
+	}()
+
+	fmt.Println("Collector läuft. Beenden mit Strg+C.")
+	for m := range measurements {
+		fmt.Printf("%+v\n", m)
 	}
-
-	if err := client.Connect(ctx); err != nil {
-		log.Fatalf("verbinden mit %s: %v", endpoint, err)
-	}
-	defer client.Close(ctx)
-	fmt.Println("Verbunden mit", endpoint)
-
-	//********************* Knoten abfragen *********************
-	id, err := ua.ParseNodeID(stateId) // ParseNodeID wandelt NodeID in NodeID-Objekt um
-	if err != nil {
-		log.Fatalf("NodeID parsen: %v", err)
-	}
-
-	req := &ua.ReadRequest{
-		MaxAge: 2000,
-		NodesToRead: []*ua.ReadValueID{
-			{
-				NodeID: id,
-			},
-		},
-		TimestampsToReturn: ua.TimestampsToReturnBoth,
-	}
-
-	resp, err := client.Read(ctx, req)
-	if err != nil {
-		log.Fatalf("Knoten lesen: %v", err)
-	}
-
-	result := resp.Results[0]
-	if result.Status != ua.StatusOK {
-		log.Fatalf("Knoten lesen: %v", result.Status)
-	}
-
-	fmt.Printf("State = %v (Typ %T)\n", result.Value.Value(), result.Value.Value())
-	fmt.Println("Status:", result.Status)
-	fmt.Println("SourceTimestamp:", result.SourceTimestamp)
-	fmt.Println("ServerTimestamp:", result.ServerTimestamp)
-
+	fmt.Println("Collector beendet.")
 }
