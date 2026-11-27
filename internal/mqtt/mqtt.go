@@ -9,7 +9,7 @@ import (
 	"github.com/fgrothaus/shopfloor-kpi/internal/model"
 )
 
-func Connect(broker *string, id *string) MQTT.Client {
+func PubConnect(broker *string, id *string) MQTT.Client {
 	opts := MQTT.NewClientOptions()
 	opts.AddBroker(*broker)
 	opts.SetClientID(*id)
@@ -35,4 +35,32 @@ func Publish(client MQTT.Client, topic *string, qos *int, measurement model.Meas
 	if err := token.Error(); err != nil {
 		log.Fatalf("Fehler beim Publishen: %v", err)
 	}
+}
+
+func SubConnect(broker *string, id *string) (MQTT.Client, <-chan [2]string) {
+	choke := make(chan [2]string, 100)
+
+	opts := MQTT.NewClientOptions()
+	opts.AddBroker(*broker)
+	opts.SetClientID(*id)
+	opts.SetOrderMatters(false)
+	opts.SetDefaultPublishHandler(func(client MQTT.Client, msg MQTT.Message) {
+		choke <- [2]string{msg.Topic(), string(msg.Payload())}
+	})
+
+	client := MQTT.NewClient(opts)
+	if token := client.Connect(); token.Wait() && token.Error() != nil {
+		panic(token.Error())
+	}
+	fmt.Println("Sample Publisher Started")
+
+	return client, choke
+}
+
+func Subscribe(client MQTT.Client, topic *string, qos byte) error {
+
+	token := client.Subscribe(*topic, qos, nil)
+	token.Wait()
+	return token.Error()
+
 }
