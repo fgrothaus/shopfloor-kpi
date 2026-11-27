@@ -54,7 +54,7 @@ func main() {
 		}
 	}()
 
-	mqttClient := mqtt_broker.Connect(broker, id)
+	mqttClient := mqtt_broker.PubConnect(broker, id)
 	defer mqttClient.Disconnect(250)
 
 	fmt.Println("Collector läuft. Beenden mit Strg+C.")
